@@ -38,13 +38,7 @@ export default function App() {
                 SereneAI
               </h1>
             </Link>
-            <div className="flex items-center space-x-8">
-              <Link 
-                to="/dashboard" 
-                className="text-[#6b7f6a] hover:text-[#4a5a49] font-light transition"
-              >
-                Dashboard
-              </Link>
+            <div className="flex items-center">
               <button 
                 onClick={logout} 
                 className="bg-gradient-to-r from-[#6b7f6a] to-[#8b9c8a] text-white px-6 py-2 rounded-full font-light hover:shadow-lg hover:shadow-[#6b7f6a]/20 transition-all"
