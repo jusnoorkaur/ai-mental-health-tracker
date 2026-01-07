@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import React from "react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../firebase";
+import { collection, query, where, getDocs, deleteDoc } from "firebase/firestore";
 import Chat from "./Chat";
 import MoodTracker from "./MoodTracker";
 import Journal from "./Journal";
@@ -7,6 +10,11 @@ import Journal from "./Journal";
 export default function Dashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("home");
+  const [stats, setStats] = useState({
+    moods: 0,
+    journals: 0,
+    chats: 0,
+  });
 
   const tabs = [
     { id: "home", label: "Home", icon: "home" },
@@ -14,6 +22,41 @@ export default function Dashboard() {
     { id: "journal", label: "Journal", icon: "journal" },
     { id: "chat", label: "Support", icon: "chat" },
   ];
+
+  // Load stats from Firestore
+  useEffect(() => {
+    if (!user) return;
+
+    const loadStats = async () => {
+      try {
+        // Count moods
+        const moodsQuery = query(collection(db, "moods"), where("userId", "==", user.uid));
+        const moodsSnapshot = await getDocs(moodsQuery);
+        
+        // Count journals
+        const journalsQuery = query(collection(db, "journals"), where("userId", "==", user.uid));
+        const journalsSnapshot = await getDocs(journalsQuery);
+        
+        // Count chat messages (only user messages)
+        const chatsQuery = query(
+          collection(db, "chats"),
+          where("userId", "==", user.uid),
+          where("sender", "==", "user")
+        );
+        const chatsSnapshot = await getDocs(chatsQuery);
+
+        setStats({
+          moods: moodsSnapshot.size,
+          journals: journalsSnapshot.size,
+          chats: chatsSnapshot.size,
+        });
+      } catch (error) {
+        console.error("Error loading stats:", error);
+      }
+    };
+
+    loadStats();
+  }, [user, activeTab]); // Reload stats when switching tabs
 
   const getIcon = (iconName) => {
     const icons = {
@@ -44,7 +87,7 @@ export default function Dashboard() {
   const renderContent = () => {
     switch (activeTab) {
       case "home":
-        return <HomeView user={user} setActiveTab={setActiveTab} />;
+        return <HomeView user={user} setActiveTab={setActiveTab} stats={stats} />;
       case "mood":
         return <MoodTracker />;
       case "journal":
@@ -52,7 +95,7 @@ export default function Dashboard() {
       case "chat":
         return <Chat />;
       default:
-        return <HomeView user={user} setActiveTab={setActiveTab} />;
+        return <HomeView user={user} setActiveTab={setActiveTab} stats={stats} />;
     }
   };
 
@@ -104,7 +147,43 @@ export default function Dashboard() {
 }
 
 // Home View Component
-function HomeView({ user, setActiveTab }) {
+function HomeView({ user, setActiveTab, stats }) {
+  const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
+  const [isClearing, setIsClearing] = React.useState(false);
+
+  const handleClearAllData = async () => {
+    setIsClearing(true);
+    try {
+      // Get all user's data
+      const moodsQuery = query(collection(db, "moods"), where("userId", "==", user.uid));
+      const journalsQuery = query(collection(db, "journals"), where("userId", "==", user.uid));
+      const chatsQuery = query(collection(db, "chats"), where("userId", "==", user.uid));
+
+      // Get snapshots
+      const [moodsSnapshot, journalsSnapshot, chatsSnapshot] = await Promise.all([
+        getDocs(moodsQuery),
+        getDocs(journalsQuery),
+        getDocs(chatsQuery)
+      ]);
+
+      // Delete all documents
+      const deletePromises = [];
+      moodsSnapshot.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+      journalsSnapshot.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+      chatsSnapshot.docs.forEach(doc => deletePromises.push(deleteDoc(doc.ref)));
+
+      await Promise.all(deletePromises);
+      
+      setShowConfirmDialog(false);
+      alert("All data cleared successfully!");
+    } catch (error) {
+      console.error("Error clearing data:", error);
+      alert("Error clearing data. Please try again.");
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <div className="space-y-12">
       <div className="text-center max-w-3xl mx-auto">
@@ -141,10 +220,85 @@ function HomeView({ user, setActiveTab }) {
 
       {/* Stats Overview */}
       <div className="mt-16 grid md:grid-cols-3 gap-8">
-        <StatCard title="Mood Entries" value="0" subtitle="Begin tracking today" />
-        <StatCard title="Journal Entries" value="0" subtitle="Start writing" />
-        <StatCard title="Chat Sessions" value="0" subtitle="Get support anytime" />
+        <StatCard 
+          title="Mood Entries" 
+          value={stats.moods} 
+          subtitle={stats.moods === 0 ? "Begin tracking today" : "entries logged"} 
+        />
+        <StatCard 
+          title="Journal Entries" 
+          value={stats.journals} 
+          subtitle={stats.journals === 0 ? "Start writing" : "thoughts captured"} 
+        />
+        <StatCard 
+          title="Chat Messages" 
+          value={stats.chats} 
+          subtitle={stats.chats === 0 ? "Get support anytime" : "messages sent"} 
+        />
       </div>
+
+      {/* Clear All Data Section */}
+      {(stats.moods > 0 || stats.journals > 0 || stats.chats > 0) && (
+        <div className="mt-16 bg-white/30 backdrop-blur-sm rounded-3xl p-8 border border-[#e8e8df]">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-xl font-light text-[#4a5a49] mb-2 flex items-center">
+                <svg className="w-5 h-5 mr-2 text-[#6b7f6a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Manage Data
+              </h3>
+              <p className="text-[#6b7f6a] text-sm font-light">
+                Clear all your stored data for a fresh start
+              </p>
+            </div>
+            <button
+              onClick={() => setShowConfirmDialog(true)}
+              className="bg-white/60 hover:bg-red-50 text-[#9a9186] hover:text-red-600 px-6 py-2 rounded-2xl font-light transition-all duration-300 border border-[#e8e8df] hover:border-red-200"
+            >
+              Clear All Data
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 animate-scale-in">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-light text-[#4a5a49] mb-2">Clear All Data?</h3>
+              <p className="text-[#6b7f6a] font-light text-sm leading-relaxed">
+                This will permanently delete all your mood entries, journal entries, and chat messages. 
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={handleClearAllData}
+                disabled={isClearing}
+                className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-3 rounded-2xl font-light hover:shadow-xl hover:shadow-red-500/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isClearing ? "Clearing..." : "Yes, Clear Everything"}
+              </button>
+              <button
+                onClick={() => setShowConfirmDialog(false)}
+                disabled={isClearing}
+                className="w-full bg-white border-2 border-[#c5d0c4] text-[#4a5a49] py-3 rounded-2xl font-light hover:bg-gray-50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
