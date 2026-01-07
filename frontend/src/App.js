@@ -1,49 +1,66 @@
-import React from "react";
-import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
 
-function App() {
+export default function App() {
+  const { user, loading, logout } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f5f5f0] via-[#e8e8df] to-[#d4d4c8]">
+        <div className="text-center">
+          <svg className="w-16 h-16 text-[#6b7f6a] animate-pulse mx-auto mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+            <line x1="9" y1="9" x2="9.01" y2="9"/>
+            <line x1="15" y1="9" x2="15.01" y2="9"/>
+          </svg>
+          <p className="text-[#6b7f6a] font-light">Loading SereneAI...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Router>
-      <div className="min-h-screen bg-gray-100 text-gray-900">
-        {/* Navbar */}
-        <nav className="bg-white shadow-md p-4 flex justify-between">
-          <h1 className="text-xl font-bold">AI Mental Health Tracker</h1>
-          <div className="space-x-4">
-            <Link to="/" className="hover:text-blue-500">Home</Link>
-            <Link to="/dashboard" className="hover:text-blue-500">Dashboard</Link>
-            <Link to="/journal" className="hover:text-blue-500">Journal</Link>
-            <Link to="/chat" className="hover:text-blue-500">AI Chat</Link>
+      {user && (
+        <nav className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50 border-b border-[#e8e8df]">
+          <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
+            <Link to="/dashboard" className="flex items-center space-x-3 hover:opacity-70 transition">
+              <svg className="w-8 h-8 text-[#6b7f6a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                <line x1="9" y1="9" x2="9.01" y2="9"/>
+                <line x1="15" y1="9" x2="15.01" y2="9"/>
+              </svg>
+              <h1 className="text-2xl font-light text-[#4a5a49] tracking-wide">
+                SereneAI
+              </h1>
+            </Link>
+            <div className="flex items-center space-x-8">
+              <Link 
+                to="/dashboard" 
+                className="text-[#6b7f6a] hover:text-[#4a5a49] font-light transition"
+              >
+                Dashboard
+              </Link>
+              <button 
+                onClick={logout} 
+                className="bg-gradient-to-r from-[#6b7f6a] to-[#8b9c8a] text-white px-6 py-2 rounded-full font-light hover:shadow-lg hover:shadow-[#6b7f6a]/20 transition-all"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </nav>
-
-        {/* Pages */}
-        <main className="p-6">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/journal" element={<Journal />} />
-            <Route path="/chat" element={<Chat />} />
-          </Routes>
-        </main>
-      </div>
+      )}
+      <Routes>
+        <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+      </Routes>
     </Router>
   );
 }
-
-function Home() {
-  return <h2 className="text-2xl font-semibold">Welcome to AI Mental Health Tracker</h2>;
-}
-
-function Dashboard() {
-  return <h2 className="text-2xl font-semibold">Dashboard Page</h2>;
-}
-
-function Journal() {
-  return <h2 className="text-2xl font-semibold">Journal Page</h2>;
-}
-
-function Chat() {
-  return <h2 className="text-2xl font-semibold">AI Chat Page</h2>;
-}
-
-export default App;
