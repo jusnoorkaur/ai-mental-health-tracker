@@ -1,13 +1,50 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
+import { useAuth } from "../context/AuthContext";
 
 function Journal() {
   const [entries, setEntries] = useState([]);
   const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
-  const handleAddEntry = () => {
-    if (text.trim()) {
-      setEntries([{ text, date: new Date().toLocaleString() }, ...entries]);
+  // Load journal entries from Firestore in real-time
+  useEffect(() => {
+    if (!user) return;
+
+    const entriesQuery = query(
+      collection(db, "journals"),
+      where("userId", "==", user.uid)
+    );
+
+    const unsubscribe = onSnapshot(entriesQuery, (snapshot) => {
+      const journalData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      // Sort on client side instead
+      journalData.sort((a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis());
+      setEntries(journalData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleAddEntry = async () => {
+    if (!text.trim() || !user) return;
+
+    try {
+      await addDoc(collection(db, "journals"), {
+        userId: user.uid,
+        text: text,
+        timestamp: new Date(),
+        date: new Date().toLocaleString(),
+      });
       setText("");
+    } catch (error) {
+      console.error("Error adding journal entry:", error);
     }
   };
 
@@ -56,7 +93,11 @@ function Journal() {
           Your Entries
         </h3>
         <div className="space-y-4 max-h-96 overflow-y-auto">
-          {entries.length === 0 ? (
+          {loading ? (
+            <div className="bg-white/30 backdrop-blur-sm rounded-3xl p-16 text-center border border-[#e8e8df]">
+              <p className="text-[#6b7f6a] font-light">Loading your entries...</p>
+            </div>
+          ) : entries.length === 0 ? (
             <div className="bg-white/30 backdrop-blur-sm rounded-3xl p-16 text-center border border-[#e8e8df]">
               <svg className="w-16 h-16 text-[#8b9c8a] mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -65,9 +106,9 @@ function Journal() {
               <p className="text-[#9aa99a] text-sm font-light">Start writing to capture your thoughts</p>
             </div>
           ) : (
-            entries.map((entry, index) => (
+            entries.map((entry) => (
               <div
-                key={index}
+                key={entry.id}
                 className="bg-white/50 backdrop-blur-sm rounded-3xl hover:shadow-xl hover:shadow-[#6b7f6a]/10 transition-shadow p-8 border border-[#e8e8df]"
               >
                 <p className="text-[#4a5a49] whitespace-pre-wrap mb-6 font-light leading-relaxed">{entry.text}</p>

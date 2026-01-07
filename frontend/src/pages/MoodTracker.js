@@ -1,7 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
+import { useAuth } from "../context/AuthContext";
 
 function MoodTracker() {
   const [moods, setMoods] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   const moodOptions = [
     { emoji: "😊", label: "Great", color: "from-[#8b9c8a] to-[#a8b5a7]" },
@@ -11,8 +16,43 @@ function MoodTracker() {
     { emoji: "😞", label: "Down", color: "from-[#9a9186] to-[#aaa196]" },
   ];
 
-  const handleMoodClick = (mood) => {
-    setMoods([{ mood: mood.emoji, label: mood.label, date: new Date().toLocaleString() }, ...moods]);
+  // Load moods from Firestore in real-time
+  useEffect(() => {
+    if (!user) return;
+
+    const moodsQuery = query(
+      collection(db, "moods"),
+      where("userId", "==", user.uid)
+    );
+
+    const unsubscribe = onSnapshot(moodsQuery, (snapshot) => {
+      const moodData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      // Sort on client side instead
+      moodData.sort((a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis());
+      setMoods(moodData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleMoodClick = async (mood) => {
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, "moods"), {
+        userId: user.uid,
+        mood: mood.emoji,
+        label: mood.label,
+        timestamp: new Date(),
+        date: new Date().toLocaleString(),
+      });
+    } catch (error) {
+      console.error("Error adding mood:", error);
+    }
   };
 
   return (
@@ -45,7 +85,11 @@ function MoodTracker() {
           Mood History
         </h3>
         <div className="bg-white/30 backdrop-blur-sm rounded-3xl p-6 max-h-96 overflow-y-auto border border-[#e8e8df]">
-          {moods.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="text-[#6b7f6a] font-light">Loading your moods...</p>
+            </div>
+          ) : moods.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-5xl mb-4">😊</p>
               <p className="text-[#6b7f6a] font-light mb-2">No moods logged yet</p>
@@ -53,9 +97,9 @@ function MoodTracker() {
             </div>
           ) : (
             <div className="space-y-3">
-              {moods.map((entry, index) => (
+              {moods.map((entry) => (
                 <div
-                  key={index}
+                  key={entry.id}
                   className="bg-white/60 backdrop-blur-sm rounded-2xl p-5 flex items-center justify-between hover:shadow-md transition-shadow border border-[#e8e8df]"
                 >
                   <div className="flex items-center space-x-4">
