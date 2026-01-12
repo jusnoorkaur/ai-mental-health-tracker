@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db } from "../firebase";
 import { collection, addDoc, query, where, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
@@ -7,7 +7,18 @@ function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isTyping, setIsTyping] = useState(false);
   const { user } = useAuth();
+  const messagesEndRef = useRef(null);
+
+  // Auto scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   // Load chat messages from Firestore in real-time
   useEffect(() => {
@@ -23,7 +34,7 @@ function Chat() {
         id: doc.id,
         ...doc.data(),
       }));
-      // Sort on client side instead (ascending for chat)
+      // Sort on client side (ascending for chat)
       chatData.sort((a, b) => a.timestamp?.toMillis() - b.timestamp?.toMillis());
       setMessages(chatData);
       setLoading(false);
@@ -37,9 +48,10 @@ function Chat() {
 
     const userMessage = input;
     setInput("");
+    setIsTyping(true);
 
     try {
-      // Save user message
+      // Save user message to Firestore
       await addDoc(collection(db, "chats"), {
         userId: user.uid,
         text: userMessage,
@@ -47,17 +59,55 @@ function Chat() {
         timestamp: new Date(),
       });
 
-      // Mock AI response (we'll integrate real AI later)
-      setTimeout(async () => {
-        await addDoc(collection(db, "chats"), {
-          userId: user.uid,
-          text: "I'm here to support you. How can I help you today?",
-          sender: "ai",
-          timestamp: new Date(),
-        });
-      }, 1000);
+      // Prepare conversation history for ChatGPT (last 10 messages for context)
+      const recentMessages = messages.slice(-10).map(msg => ({
+        role: msg.sender === "user" ? "user" : "assistant",
+        content: msg.text
+      }));
+
+      // Add current message
+      recentMessages.push({
+        role: "user",
+        content: userMessage
+      });
+
+      // Call backend API
+      const response = await fetch('http://localhost:5001/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: recentMessages
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get AI response');
+      }
+
+      const data = await response.json();
+      const aiResponse = data.response;
+
+      // Save AI response to Firestore
+      await addDoc(collection(db, "chats"), {
+        userId: user.uid,
+        text: aiResponse,
+        sender: "ai",
+        timestamp: new Date(),
+      });
+
     } catch (error) {
       console.error("Error sending message:", error);
+      // Save error message
+      await addDoc(collection(db, "chats"), {
+        userId: user.uid,
+        text: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.",
+        sender: "ai",
+        timestamp: new Date(),
+      });
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -92,22 +142,36 @@ function Chat() {
             </div>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
-            >
+          <>
+            {messages.map((msg) => (
               <div
-                className={`p-4 rounded-2xl max-w-xs font-light ${
-                  msg.sender === "user"
-                    ? "bg-gradient-to-r from-[#6b7f6a] to-[#8b9c8a] text-white"
-                    : "bg-white/80 backdrop-blur-sm text-[#4a5a49] border border-[#e8e8df]"
-                }`}
+                key={msg.id}
+                className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
               >
-                {msg.text}
+                <div
+                  className={`p-4 rounded-2xl max-w-xs font-light ${
+                    msg.sender === "user"
+                      ? "bg-gradient-to-r from-[#6b7f6a] to-[#8b9c8a] text-white"
+                      : "bg-white/80 backdrop-blur-sm text-[#4a5a49] border border-[#e8e8df]"
+                  }`}
+                >
+                  {msg.text}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+            {isTyping && (
+              <div className="flex justify-start">
+                <div className="bg-white/80 backdrop-blur-sm text-[#4a5a49] border border-[#e8e8df] p-4 rounded-2xl">
+                  <div className="flex space-x-2">
+                    <div className="w-2 h-2 bg-[#6b7f6a] rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-[#6b7f6a] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-2 h-2 bg-[#6b7f6a] rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </>
         )}
       </div>
 
@@ -118,14 +182,15 @@ function Chat() {
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Type your message..."
-          className="flex-1 border border-[#c5d0c4] bg-white/50 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-[#8b9c8a]/50 focus:border-transparent transition text-[#4a5a49] placeholder-[#9aa99a] font-light"
+          disabled={isTyping}
+          className="flex-1 border border-[#c5d0c4] bg-white/50 rounded-2xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-[#8b9c8a]/50 focus:border-transparent transition text-[#4a5a49] placeholder-[#9aa99a] font-light disabled:opacity-50"
         />
         <button
           onClick={handleSend}
-          disabled={!input.trim()}
+          disabled={!input.trim() || isTyping}
           className="bg-gradient-to-r from-[#6b7f6a] to-[#8b9c8a] text-white px-8 py-4 rounded-2xl hover:shadow-xl hover:shadow-[#6b7f6a]/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed font-light"
         >
-          Send
+          {isTyping ? "Sending..." : "Send"}
         </button>
       </div>
     </div>
