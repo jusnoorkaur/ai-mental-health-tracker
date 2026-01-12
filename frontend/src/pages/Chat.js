@@ -8,6 +8,7 @@ function Chat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
+  const [showCrisisAlert, setShowCrisisAlert] = useState(false);
   const { user } = useAuth();
   const messagesEndRef = useRef(null);
 
@@ -19,6 +20,17 @@ function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Detect crisis keywords
+  const detectCrisisKeywords = (text) => {
+    const crisisKeywords = [
+      'suicide', 'kill myself', 'end my life', 'want to die', 'better off dead',
+      'no reason to live', 'can\'t go on', 'hurt myself', 'self harm', 'suicidal'
+    ];
+    
+    const lowerText = text.toLowerCase();
+    return crisisKeywords.some(keyword => lowerText.includes(keyword));
+  };
 
   // Load chat messages from Firestore in real-time
   useEffect(() => {
@@ -58,6 +70,11 @@ function Chat() {
         sender: "user",
         timestamp: new Date(),
       });
+
+      // Check for crisis keywords
+      if (detectCrisisKeywords(userMessage)) {
+        setShowCrisisAlert(true);
+      }
 
       // Prepare conversation history for ChatGPT (last 10 messages for context)
       const recentMessages = messages.slice(-10).map(msg => ({
@@ -193,6 +210,50 @@ function Chat() {
           {isTyping ? "Sending..." : "Send"}
         </button>
       </div>
+
+      {/* Crisis Alert Modal */}
+      {showCrisisAlert && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-light text-[#4a5a49] mb-3">We're Here for You</h3>
+              <p className="text-[#6b7f6a] font-light leading-relaxed mb-4">
+                It sounds like you might be going through a really difficult time. While I'm here to listen, 
+                trained crisis counselors are available 24/7 and can provide immediate support.
+              </p>
+              <div className="bg-red-50 rounded-2xl p-4 mb-4">
+                <p className="text-red-800 font-medium mb-2">Crisis Support Available Now:</p>
+                <a href="tel:988" className="text-red-600 font-medium text-lg">📞 Call or Text 988</a>
+                <p className="text-red-700 text-sm mt-1">Suicide & Crisis Lifeline - Free & Confidential</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setShowCrisisAlert(false);
+                  // Open crisis resources
+                  window.dispatchEvent(new CustomEvent('openCrisisResources'));
+                }}
+                className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-3 rounded-2xl font-light hover:shadow-xl transition-all"
+              >
+                View All Crisis Resources
+              </button>
+              <button
+                onClick={() => setShowCrisisAlert(false)}
+                className="w-full bg-white border-2 border-[#c5d0c4] text-[#4a5a49] py-3 rounded-2xl font-light hover:bg-gray-50 transition-all"
+              >
+                Continue Conversation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
